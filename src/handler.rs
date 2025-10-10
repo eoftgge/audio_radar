@@ -7,6 +7,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::System::LibraryLoader::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::w;
+use crate::errors::AudioRadarErrors;
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
@@ -17,9 +18,9 @@ unsafe extern "system" fn wnd_proc(
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
-fn create_overlay_window() -> HWND {
+fn create_overlay_window() -> Result<HWND, AudioRadarErrors> {
     unsafe {
-        let hinstance = GetModuleHandleW(None).unwrap();
+        let hinstance = GetModuleHandleW(None)?;
         let class_name = w!("AudioRadar");
 
         let wc = WNDCLASSW {
@@ -45,17 +46,16 @@ fn create_overlay_window() -> HWND {
             None,
             Some(hinstance.into()),
             None,
-        )
-        .unwrap();
-        SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 0, LWA_COLORKEY).unwrap();
+        )?;
+        SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 0, LWA_COLORKEY)?;
         let _ = ShowWindow(hwnd, SW_SHOW);
-        hwnd
+        Ok(hwnd)
     }
 }
 
-pub fn overlay_loop(rx: Receiver<RadarMessage>) {
+pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
     let mut current_dir = 0.0f32;
-    let hwnd = create_overlay_window();
+    let hwnd = create_overlay_window()?;
 
     log::info!("Starting overlay loop");
     loop {

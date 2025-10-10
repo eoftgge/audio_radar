@@ -8,7 +8,7 @@ use wasapi::{Direction, StreamMode, get_default_device, initialize_mta};
 pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRadarErrors> {
     initialize_mta()
         .ok()
-        .map_err(|_| AudioRadarErrors::Internal("blabla"))?;
+        .map_err(|_| AudioRadarErrors::Internal("error in initialize_mta"))?;
     let device = get_default_device(&Direction::Render)?;
     let mut audio_client = device.get_iaudioclient()?;
     let format = audio_client.get_mixformat()?;

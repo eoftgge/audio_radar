@@ -2,7 +2,6 @@ use crate::utils::colorref_from_rgb;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SYSTEM_METRICS_INDEX};
-use crate::errors::AudioRadarErrors;
 
 fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
     let max_ild = 10.0;
