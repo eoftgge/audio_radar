@@ -26,6 +26,8 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
     let mut left_buf = Vec::new();
     let mut right_buf = Vec::new();
     let window_samples = (format.get_samplespersec() / 25) as usize;
+    let mut smoothed_ild = 0.0;
+    let alpha = 0.3;
 
     audio_client.start_stream()?;
 
@@ -56,10 +58,10 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
             let lrms = (left_buf.iter().map(|s| s * s).sum::<f32>() / left_buf.len() as f32).sqrt();
             let rrms =
                 (right_buf.iter().map(|s| s * s).sum::<f32>() / right_buf.len() as f32).sqrt();
-
             let ild_db = 20.0 * ((rrms + 1e-6) / (lrms + 1e-6)).log10();
-            let _ = tx_radar.send(RadarMessage::Direction(ild_db));
+            smoothed_ild = smoothed_ild * (1.0 - alpha) + ild_db * alpha;
 
+            let _ = tx_radar.send(RadarMessage::Direction(smoothed_ild));
             left_buf.clear();
             right_buf.clear();
         }
