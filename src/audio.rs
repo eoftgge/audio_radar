@@ -4,6 +4,8 @@ use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
 use wasapi::{Direction, StreamMode, get_default_device, initialize_mta};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+use windows::Win32::UI::WindowsAndMessaging::PostQuitMessage;
 
 pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRadarErrors> {
     initialize_mta()
@@ -64,6 +66,14 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
             let _ = tx_radar.send(RadarMessage::Direction(smoothed_ild));
             left_buf.clear();
             right_buf.clear();
+        }
+
+        unsafe {
+            if GetAsyncKeyState(VK_ESCAPE.0 as i32) < 0 {
+                PostQuitMessage(0);
+                let _ = tx_radar.send(RadarMessage::Stop);
+                break Ok(());
+            }
         }
     }
 }

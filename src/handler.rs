@@ -34,7 +34,7 @@ fn create_overlay_window() -> Result<HWND, AudioRadarErrors> {
         let height = GetSystemMetrics(SYSTEM_METRICS_INDEX(1));
 
         let hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_APPWINDOW | WS_EX_NOACTIVATE,
             class_name,
             w!("SoundOverlay"),
             WS_POPUP,
@@ -48,7 +48,7 @@ fn create_overlay_window() -> Result<HWND, AudioRadarErrors> {
             None,
         )?;
         SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 255, LWA_COLORKEY)?;
-        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         Ok(hwnd)
     }
 }
@@ -63,6 +63,8 @@ pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
             if let RadarMessage::Direction(ild_db) = msg {
                 log::info!("{:?}", ild_db);
                 current_dir = ild_db;
+            } else if let RadarMessage::Stop = msg {
+                break Ok(());
             }
         }
 
