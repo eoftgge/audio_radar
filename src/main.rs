@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use audio_radar::audio::start_capture_audio;
 use audio_radar::handler::handler;
 use audio_radar::types::RadarMessage;
