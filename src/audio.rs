@@ -4,33 +4,32 @@ use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
 use wasapi::{Direction, StreamMode, get_default_device, initialize_mta};
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
-use windows::Win32::UI::WindowsAndMessaging::PostQuitMessage;
 
 pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRadarErrors> {
     initialize_mta()
         .ok()
         .map_err(|_| AudioRadarErrors::Internal("error in initialize_mta"))?;
     let device = get_default_device(&Direction::Render)?;
+
+    println!("device {}", device.get_friendlyname()?);
     let mut audio_client = device.get_iaudioclient()?;
     let format = audio_client.get_mixformat()?;
     let bytes_per_frame = format.get_blockalign() as usize;
     let channels = format.get_nchannels() as usize;
-    assert_eq!(channels, 2, "need stereo");
+    if channels != 2 {
+        return Err(AudioRadarErrors::Internal("need stereo"));
+    }
 
     let mode = StreamMode::PollingShared {
-        autoconvert: false,
-        buffer_duration_hns: 1_000_000,
+        autoconvert: true,
+        buffer_duration_hns: 5_000_000,
     };
     audio_client.initialize_client(&format, &Direction::Capture, &mode)?;
 
     let capture = audio_client.get_audiocaptureclient()?;
     let mut left_buf = Vec::new();
     let mut right_buf = Vec::new();
-    let window_samples = (format.get_samplespersec() / 25) as usize;
-    let mut smoothed_ild = 0.0;
-    let alpha = 0.3;
-
+    let window_samples = (format.get_samplespersec() / 5) as usize;
     audio_client.start_stream()?;
 
     log::info!("Started audio stream!");
@@ -45,11 +44,9 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
 
         let mut buffer = vec![0u8; frames as usize * bytes_per_frame];
         let _ = capture.read_from_device(&mut buffer)?;
-
-        let samples: Vec<f32> = buffer
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .collect();
+        let samples: &[f32] = unsafe {
+            std::slice::from_raw_parts(buffer.as_ptr() as *const f32, buffer.len() / 4)
+        };
 
         for chunk in samples.chunks_exact(channels) {
             left_buf.push(chunk[0]);
@@ -61,19 +58,9 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
             let rrms =
                 (right_buf.iter().map(|s| s * s).sum::<f32>() / right_buf.len() as f32).sqrt();
             let ild_db = 20.0 * ((rrms + 1e-6) / (lrms + 1e-6)).log10();
-            smoothed_ild = smoothed_ild * (1.0 - alpha) + ild_db * alpha;
-
-            let _ = tx_radar.send(RadarMessage::Direction(smoothed_ild));
+            let _ = tx_radar.send(RadarMessage::Direction(ild_db));
             left_buf.clear();
             right_buf.clear();
-        }
-
-        unsafe {
-            if GetAsyncKeyState(VK_ESCAPE.0 as i32) < 0 {
-                PostQuitMessage(0);
-                let _ = tx_radar.send(RadarMessage::Stop);
-                break Ok(());
-            }
         }
     }
 }
