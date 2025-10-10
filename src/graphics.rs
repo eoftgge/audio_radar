@@ -2,6 +2,7 @@ use crate::utils::colorref_from_rgb;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SYSTEM_METRICS_INDEX};
+use crate::errors::AudioRadarErrors;
 
 fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
     let max_ild = 10.0;
@@ -51,8 +52,8 @@ pub(crate) fn draw_indicator(hwnd: HWND, ild_db: f32) {
         let rect = RECT { left: 0, top: 0, right: screen_width, bottom: screen_height };
         FillRect(hdc, &rect, HBRUSH(GetStockObject(BLACK_BRUSH).0));
 
-        let screen_width = unsafe { GetSystemMetrics(SYSTEM_METRICS_INDEX(0)) } as f32;
-        let screen_height = unsafe { GetSystemMetrics(SYSTEM_METRICS_INDEX(1)) } as f32;
+        let screen_width = GetSystemMetrics(SYSTEM_METRICS_INDEX(0)) as f32;
+        let screen_height = GetSystemMetrics(SYSTEM_METRICS_INDEX(1)) as f32;
         let cx = screen_width / 2.0;
         let cy = screen_height / 4.0;
 
