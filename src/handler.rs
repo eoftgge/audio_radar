@@ -67,6 +67,6 @@ pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
         }
 
         draw_indicator(hwnd, current_dir);
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(10));
     }
 }

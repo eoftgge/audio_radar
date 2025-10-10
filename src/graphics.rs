@@ -65,7 +65,6 @@ pub(crate) fn draw_indicator(hwnd: HWND, ild_db: f32) {
         FillRect(hdc, &rect, HBRUSH(GetStockObject(BLACK_BRUSH).0));
         let cx = screen_width / 2.0;
         let cy = screen_height / 4.0;
-
         draw_arrow(hdc, cx, cy, ild_db);
 
         ReleaseDC(Some(hwnd), hdc);
