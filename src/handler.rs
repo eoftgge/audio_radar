@@ -1,12 +1,12 @@
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
-use windows::core::w;
-use windows::Win32::Foundation::*;
-use windows::Win32::System::LibraryLoader::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::graphics::draw_indicator;
 use crate::types::RadarMessage;
 use crate::utils::colorref_from_rgb;
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+use windows::Win32::Foundation::*;
+use windows::Win32::System::LibraryLoader::*;
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::w;
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
@@ -45,7 +45,8 @@ fn create_overlay_window() -> HWND {
             None,
             Some(hinstance.into()),
             None,
-        ).unwrap();
+        )
+        .unwrap();
         SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 0, LWA_COLORKEY).unwrap();
         let _ = ShowWindow(hwnd, SW_SHOW);
         hwnd

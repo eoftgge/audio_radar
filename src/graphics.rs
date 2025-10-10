@@ -1,12 +1,17 @@
+use crate::utils::colorref_from_rgb;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SYSTEM_METRICS_INDEX};
-use crate::utils::colorref_from_rgb;
 
 pub(crate) fn draw_indicator(hwnd: HWND, ild_db: f32) {
     unsafe {
         let hdc = GetDC(Some(hwnd));
-        let rect = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
         FillRect(hdc, &rect, HBRUSH(GetStockObject(BLACK_BRUSH).0));
         let clamped = ild_db.clamp(-10.0, 10.0);
         let screen_width = GetSystemMetrics(SYSTEM_METRICS_INDEX(0));

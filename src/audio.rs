@@ -1,13 +1,11 @@
 use crate::errors::AudioRadarErrors;
 use crate::types::RadarMessage;
+use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
-use std::sync::mpsc::Sender;
 use wasapi::{Direction, StreamMode, get_default_device, initialize_mta};
 
-pub fn start_capture_audio(
-    tx_radar: Sender<RadarMessage>,
-) -> Result<(), AudioRadarErrors> {
+pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRadarErrors> {
     initialize_mta()
         .ok()
         .map_err(|_| AudioRadarErrors::Internal("blabla"))?;
@@ -56,7 +54,8 @@ pub fn start_capture_audio(
 
         if left_buf.len() >= window_samples {
             let lrms = (left_buf.iter().map(|s| s * s).sum::<f32>() / left_buf.len() as f32).sqrt();
-            let rrms = (right_buf.iter().map(|s| s * s).sum::<f32>() / right_buf.len() as f32).sqrt();
+            let rrms =
+                (right_buf.iter().map(|s| s * s).sum::<f32>() / right_buf.len() as f32).sqrt();
 
             let ild_db = 20.0 * ((rrms + 1e-6) / (lrms + 1e-6)).log10();
             let _ = tx_radar.send(RadarMessage::Direction(ild_db));

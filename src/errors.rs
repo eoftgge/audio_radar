@@ -6,5 +6,5 @@ pub enum AudioRadarErrors {
     #[error("{0}")]
     Wasapi(#[from] WasapiError),
     #[error("{0}")]
-    Internal(&'static str)
+    Internal(&'static str),
 }

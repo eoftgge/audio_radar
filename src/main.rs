@@ -1,6 +1,6 @@
-use audio_radar::types::RadarMessage;
 use audio_radar::audio::start_capture_audio;
 use audio_radar::handler::overlay_loop;
+use audio_radar::types::RadarMessage;
 
 fn main() {
     simple_logger::init().unwrap();
