@@ -3,9 +3,9 @@
 use audio_radar::audio::start_capture_audio;
 use audio_radar::handler::handler;
 use audio_radar::types::RadarMessage;
-use simple_file_logger::{init_logger, LogLevel};
+use simple_file_logger::{LogLevel, init_logger};
+use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
 use windows::core::PCWSTR;
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
 fn show_error(msg: &str) {
     use std::ffi::OsStr;
