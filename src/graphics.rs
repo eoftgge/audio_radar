@@ -1,7 +1,7 @@
 use crate::utils::colorref_from_rgb;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SYSTEM_METRICS_INDEX};
+use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
 fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
     let max_ild = 10.0;
@@ -9,7 +9,6 @@ fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
 
     let base_width = 10.0;
     let max_length = 60.0;
-
     let length = (clamped.abs() / max_ild) * max_length;
 
     let tip_x = cx + if clamped >= 0.0 { length } else { -length };
@@ -21,9 +20,18 @@ fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
     let base_right_y = cy + base_width;
 
     let points = [
-        POINT { x: tip_x as i32, y: tip_y as i32 },
-        POINT { x: base_left_x as i32, y: base_left_y as i32 },
-        POINT { x: base_right_x as i32, y: base_right_y as i32 },
+        POINT {
+            x: tip_x as i32,
+            y: tip_y as i32,
+        },
+        POINT {
+            x: base_left_x as i32,
+            y: base_left_y as i32,
+        },
+        POINT {
+            x: base_right_x as i32,
+            y: base_right_y as i32,
+        },
     ];
 
     unsafe {
@@ -45,14 +53,16 @@ fn draw_arrow(hdc: HDC, cx: f32, cy: f32, ild_db: f32) {
 pub(crate) fn draw_indicator(hwnd: HWND, ild_db: f32) {
     unsafe {
         let hdc = GetDC(Some(hwnd));
+        let screen_width = GetSystemMetrics(SM_CXSCREEN) as f32;
+        let screen_height = GetSystemMetrics(SM_CYSCREEN) as f32;
 
-        let screen_width = GetSystemMetrics(SYSTEM_METRICS_INDEX(0));
-        let screen_height = GetSystemMetrics(SYSTEM_METRICS_INDEX(1));
-        let rect = RECT { left: 0, top: 0, right: screen_width, bottom: screen_height };
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: screen_width as i32,
+            bottom: screen_height as i32,
+        };
         FillRect(hdc, &rect, HBRUSH(GetStockObject(BLACK_BRUSH).0));
-
-        let screen_width = GetSystemMetrics(SYSTEM_METRICS_INDEX(0)) as f32;
-        let screen_height = GetSystemMetrics(SYSTEM_METRICS_INDEX(1)) as f32;
         let cx = screen_width / 2.0;
         let cy = screen_height / 4.0;
 

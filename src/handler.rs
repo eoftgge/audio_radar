@@ -1,3 +1,4 @@
+use crate::errors::AudioRadarErrors;
 use crate::graphics::draw_indicator;
 use crate::types::RadarMessage;
 use crate::utils::colorref_from_rgb;
@@ -7,7 +8,6 @@ use windows::Win32::Foundation::*;
 use windows::Win32::System::LibraryLoader::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::w;
-use crate::errors::AudioRadarErrors;
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
@@ -47,7 +47,7 @@ fn create_overlay_window() -> Result<HWND, AudioRadarErrors> {
             Some(hinstance.into()),
             None,
         )?;
-        SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 0, LWA_COLORKEY)?;
+        SetLayeredWindowAttributes(hwnd, colorref_from_rgb(0, 0, 0), 255, LWA_COLORKEY)?;
         let _ = ShowWindow(hwnd, SW_SHOW);
         Ok(hwnd)
     }
@@ -61,11 +61,12 @@ pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
     loop {
         if let Ok(msg) = rx.try_recv() {
             if let RadarMessage::Direction(ild_db) = msg {
+                log::info!("{:?}", ild_db);
                 current_dir = ild_db;
             }
         }
 
         draw_indicator(hwnd, current_dir);
-        std::thread::sleep(Duration::from_millis(30));
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
