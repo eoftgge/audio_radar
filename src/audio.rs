@@ -44,9 +44,8 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
 
         let mut buffer = vec![0u8; frames as usize * bytes_per_frame];
         let _ = capture.read_from_device(&mut buffer)?;
-        let samples: &[f32] = unsafe {
-            std::slice::from_raw_parts(buffer.as_ptr() as *const f32, buffer.len() / 4)
-        };
+        let samples: &[f32] =
+            unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const f32, buffer.len() / 4) };
 
         for chunk in samples.chunks_exact(channels) {
             left_buf.push(chunk[0]);

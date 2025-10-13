@@ -63,7 +63,7 @@ pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
             if let RadarMessage::Direction(ild_db) = msg {
                 log::info!("{:?}", ild_db);
                 current_dir = ild_db;
-            } 
+            }
         }
 
         draw_indicator(hwnd, current_dir);
