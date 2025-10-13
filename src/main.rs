@@ -24,7 +24,7 @@ fn show_error(msg: &str) {
 }
 
 fn main() {
-    init_logger("audio_radar", LogLevel::Info).unwrap();
+    init_logger("audio_radar", LogLevel::Debug).unwrap();
     let (tx_radar, rx_radar) = std::sync::mpsc::channel::<RadarMessage>();
     std::thread::spawn(move || start_capture_audio(tx_radar));
 
