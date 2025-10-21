@@ -58,7 +58,15 @@ pub fn handler(rx: Receiver<RadarMessage>) -> Result<(), AudioRadarErrors> {
     let hwnd = create_overlay_window()?;
 
     log::info!("Starting overlay loop");
+    let mut msg = MSG::default();
     loop {
+        unsafe {
+            while PeekMessageW(&mut msg, Some(HWND(std::ptr::null_mut())), 0, 0, PM_REMOVE).into() {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+
         if let Ok(msg) = rx.try_recv() {
             if let RadarMessage::Direction(ild_db) = msg {
                 log::info!("{:?}", ild_db);

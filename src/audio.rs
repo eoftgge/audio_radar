@@ -9,7 +9,7 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
     initialize_mta()
         .ok()
         .map_err(|_| AudioRadarErrors::Internal("error in initialize_mta"))?;
-    let device = get_default_device(&Direction::Render)?;
+    let device = get_default_device(&Direction::Capture)?;
 
     log::info!("device {}", device.get_friendlyname()?);
     let mut audio_client = device.get_iaudioclient()?;
@@ -22,7 +22,7 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
 
     let mode = StreamMode::PollingShared {
         autoconvert: true,
-        buffer_duration_hns: 5_000_000,
+        buffer_duration_hns: 2_000_000,
     };
     audio_client.initialize_client(&format, &Direction::Capture, &mode)?;
 
@@ -57,9 +57,11 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
             let rrms =
                 (right_buf.iter().map(|s| s * s).sum::<f32>() / right_buf.len() as f32).sqrt();
             let ild_db = 20.0 * ((rrms + 1e-6) / (lrms + 1e-6)).log10();
-            let _ = tx_radar.send(RadarMessage::Direction(ild_db));
             left_buf.clear();
             right_buf.clear();
+            if let Err(_) = tx_radar.send(RadarMessage::Direction(ild_db)) {
+                break Ok(());
+            }
         }
     }
 }
