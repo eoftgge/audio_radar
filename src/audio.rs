@@ -16,8 +16,8 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
     let format = audio_client.get_mixformat()?;
     let bytes_per_frame = format.get_blockalign() as usize;
     let channels = format.get_nchannels() as usize;
-    if channels != 2 {
-        return Err(AudioRadarErrors::Internal("need stereo"));
+    if channels < 2 {
+        return Err(AudioRadarErrors::Internal("Device has less than 2 channels"));
     }
 
     let mode = StreamMode::PollingShared {
@@ -47,9 +47,15 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
         let samples: &[f32] =
             unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const f32, buffer.len() / 4) };
 
+        let (left_idx, right_idx) = if channels >= 2 {
+            (0, 1)
+        } else {
+            (0, 0)
+        };
+
         for chunk in samples.chunks_exact(channels) {
-            left_buf.push(chunk[0]);
-            right_buf.push(chunk[1]);
+            left_buf.push(chunk[left_idx]);
+            right_buf.push(chunk[right_idx]);
         }
 
         if left_buf.len() >= window_samples {
