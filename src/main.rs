@@ -26,12 +26,17 @@ fn show_error(msg: &str) {
 fn main() {
     init_logger("audio_radar", LogLevel::Debug).unwrap();
     let (tx_radar, rx_radar) = std::sync::mpsc::channel::<RadarMessage>();
-    std::thread::spawn(move || start_capture_audio(tx_radar));
+    std::thread::spawn(move || if let Err(err) = start_capture_audio(tx_radar) {
+        log::error!("Failed to start capture audio: {}", err);
+        show_error(&format!("{}", err));
+        std::process::exit(1);
+    });
 
     log::info!("Starting the program");
     if let Err(err) = handler(rx_radar) {
         log::error!("{}", err);
         log::warn!("aborting...");
         show_error(&format!("{}", err));
+        std::process::exit(1);
     }
 }
