@@ -9,7 +9,7 @@ pub fn start_capture_audio(tx_radar: Sender<RadarMessage>) -> Result<(), AudioRa
     initialize_mta()
         .ok()
         .map_err(|_| AudioRadarErrors::Internal("error in initialize_mta"))?;
-    let device = get_default_device(&Direction::Capture)?;
+    let device = get_default_device(&Direction::Render)?;
 
     log::info!("device {}", device.get_friendlyname()?);
     let mut audio_client = device.get_iaudioclient()?;
