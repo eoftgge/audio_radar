@@ -1,12 +1,21 @@
 use thiserror::Error;
-use wasapi::WasapiError;
 
 #[derive(Error, Debug)]
 pub enum AudioRadarErrors {
-    #[error("{0}")]
-    Wasapi(#[from] WasapiError),
-    #[error("{0}")]
-    Windows(#[from] windows::core::Error),
-    #[error("{0}")]
-    Internal(&'static str),
+    #[error("Internal: {0}")]
+    Internal(String),
+    #[error("GUI: {0}")]
+    GUI(#[from] eframe::Error),
+    #[error("In playing stream: {0}")]
+    PlayStream(#[from] cpal::PlayStreamError),
+    #[error("In build stream: {0}")]
+    BuildStream(#[from] cpal::BuildStreamError),
+    #[error("In default config stream: {0}")]
+    ConfigStream(#[from] cpal::DefaultStreamConfigError),
+}
+
+impl From<&str> for AudioRadarErrors {
+    fn from(value: &str) -> Self {
+        Self::Internal(value.into())
+    }
 }

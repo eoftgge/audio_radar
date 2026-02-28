@@ -1,4 +1,4 @@
 pub enum RadarMessage {
     Direction(f32),
-    Stop,
+    Surround { x: f32, y: f32, intensity: f32 },
 }

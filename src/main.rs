@@ -1,42 +1,39 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use audio_radar::audio::start_capture_audio;
-use audio_radar::handler::handler;
-use audio_radar::types::RadarMessage;
-use simple_file_logger::{LogLevel, init_logger};
-use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
-use windows::core::PCWSTR;
+use audio_radar::errors::AudioRadarErrors;
+use audio_radar::gui::app::IndicatorApp;
+use eframe::NativeOptions;
+use eframe::egui::ViewportBuilder;
+use eframe::icon_data::from_png_bytes;
+use std::sync::mpsc;
 
-fn show_error(msg: &str) {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
+const ICON_BYTES: &[u8] = include_bytes!("../assets/icon.png");
 
-    let wide: Vec<u16> = OsStr::new(msg).encode_wide().chain(Some(0)).collect();
+fn main() -> Result<(), AudioRadarErrors> {
+    env_logger::init();
+    let (tx, rx) = mpsc::channel();
+    let options = NativeOptions {
+        viewport: ViewportBuilder::default()
+            .with_app_id("sublive")
+            .with_icon(from_png_bytes(ICON_BYTES).expect("Failed to load icon"))
+            .with_decorations(false)
+            .with_always_on_top()
+            .with_transparent(true)
+            .with_maximized(true),
+        ..Default::default()
+    };
 
-    unsafe {
-        MessageBoxW(
-            None,
-            PCWSTR(wide.as_ptr()),
-            PCWSTR(wide.as_ptr()),
-            MB_OK | MB_ICONERROR,
-        );
-    }
-}
-
-fn main() {
-    init_logger("audio_radar", LogLevel::Debug).unwrap();
-    let (tx_radar, rx_radar) = std::sync::mpsc::channel::<RadarMessage>();
-    std::thread::spawn(move || if let Err(err) = start_capture_audio(tx_radar) {
-        log::error!("Failed to start capture audio: {}", err);
-        show_error(&format!("{}", err));
-        std::process::exit(1);
+    std::thread::spawn(|| {
+        if let Err(err) = start_capture_audio(tx) {
+            log::error!("error in capture audio: {}", err);
+        }
     });
 
-    log::info!("Starting the program");
-    if let Err(err) = handler(rx_radar) {
-        log::error!("{}", err);
-        log::warn!("aborting...");
-        show_error(&format!("{}", err));
-        std::process::exit(1);
-    }
+    eframe::run_native(
+        "AudioRadar",
+        options,
+        Box::new(|_cc| Ok(Box::new(IndicatorApp::new(rx)))),
+    )?;
+    Ok(())
 }

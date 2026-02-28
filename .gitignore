@@ -1,1 +1,9 @@
 /target
+Cargo.lock
+/.idea
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
