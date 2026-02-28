@@ -1,4 +1,4 @@
-use crate::gui::draw::{draw_indicator_ild, draw_indicator_xy};
+use crate::gui::draw::draw_indicator;
 use crate::types::RadarMessage;
 use eframe::egui::{
     Context, Id, LayerId, Order, ViewportCommand, Visuals, WindowLevel,
@@ -20,7 +20,7 @@ impl IndicatorApp {
     pub fn new(rx: mpsc::Receiver<RadarMessage>) -> Self {
         Self {
             rx,
-            current_message: RadarMessage::Direction(0.0),
+            current_message: RadarMessage::Surround { x: 0.0, y: 0.0, intensity: 0.0 },
             initialized: false,
         }
     }
@@ -37,8 +37,7 @@ impl eframe::App for IndicatorApp {
         }
         let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::from("indicator")));
         match self.current_message {
-            RadarMessage::Direction(ild) => draw_indicator_ild(&painter, ctx, ild),
-            RadarMessage::Surround { x, y, intensity } => draw_indicator_xy(&painter, ctx, x, y, intensity),
+            RadarMessage::Surround { x, y, intensity } => draw_indicator(&painter, ctx, x, y, intensity),
         }
         ctx.send_viewport_cmd(ViewportCommand::WindowLevel(WindowLevel::AlwaysOnTop));
         ctx.request_repaint_after(FRAME_TIME);

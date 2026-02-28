@@ -30,6 +30,7 @@ fn main() -> Result<(), AudioRadarErrors> {
         }
     });
 
+    log::info!("running...");
     eframe::run_native(
         "AudioRadar",
         options,

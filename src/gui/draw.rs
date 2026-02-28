@@ -1,7 +1,7 @@
 use eframe::egui::{Color32, Context, Id, Painter, Stroke, pos2};
 use std::f32::consts::PI;
 
-pub fn draw_indicator_xy(painter: &Painter, ctx: &Context, x_val: f32, y_val: f32, intensity: f32) {
+pub fn draw_indicator(painter: &Painter, ctx: &Context, x_val: f32, y_val: f32, intensity: f32) {
     let rect = ctx.content_rect();
     let center = rect.center();
     let max_radius = 120.0;
@@ -44,59 +44,4 @@ pub fn draw_indicator_xy(painter: &Painter, ctx: &Context, x_val: f32, y_val: f3
     painter.line_segment([tip_pos, end_left], stroke);
     painter.line_segment([tip_pos, end_right], stroke);
 
-}
-
-pub fn draw_indicator_ild(painter: &Painter, ctx: &Context, ild: f32) {
-    let rect = ctx.content_rect();
-    let center = rect.center();
-    let max_radius = 120.0;
-    let sensitivity = 15.0;
-    let smoothing = 0.06;
-
-    let target = (ild / sensitivity).clamp(-1.0, 1.0);
-    let val = ctx.animate_value_with_time(Id::new("radar_smooth"), target, smoothing);
-    let start_angle = -PI / 2.0;
-    let max_deflection = PI / 3.0;
-
-    let bg_color = Color32::from_white_alpha(30);
-    let angles = [
-        start_angle - max_deflection,
-        start_angle,
-        start_angle + max_deflection,
-    ];
-
-    for angle in angles {
-        let bx = center.x + max_radius * angle.cos();
-        let by = center.y + max_radius * angle.sin();
-        painter.circle_filled(pos2(bx, by), 3.0, bg_color);
-    }
-
-    let is_loud = val.abs() > 0.1;
-    let color = if is_loud {
-        Color32::from_rgba_premultiplied(255, 50, 50, 230)
-    } else {
-        Color32::from_rgba_premultiplied(50, 255, 50, 100)
-    };
-    let current_angle = start_angle + (val * max_deflection);
-    let x = center.x + max_radius * current_angle.cos();
-    let y = center.y + max_radius * current_angle.sin();
-    painter.circle_filled(pos2(x, y), 4.0, color);
-    painter.circle_stroke(
-        pos2(x, y),
-        5.0,
-        Stroke::new(1.0, Color32::from_white_alpha(100)),
-    );
-
-    if is_loud {
-        painter.line_segment(
-            [
-                pos2(x, y),
-                pos2(
-                    center.x + (max_radius - 15.0) * current_angle.cos(),
-                    center.y + (max_radius - 15.0) * current_angle.sin(),
-                ),
-            ],
-            Stroke::new(2.0, color),
-        );
-    }
 }
