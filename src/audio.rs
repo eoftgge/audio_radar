@@ -64,6 +64,8 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
 
             let mut prev_x = 0.0;
             let mut prev_y = 1.0;
+            let mut lp_left = 0.0;
+            let mut lp_right = 0.0;
             let mut prev_brightness = 0.0;
             let mut prev_intensity = 0.0;
 
@@ -153,13 +155,17 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                     let dom_rms;
 
                     if rms_l > rms_r {
-                        for i in 1..left.len() {
-                            diff_sum += (left[i] - left[i - 1]).powi(2);
+                        for i in 0..left.len() {
+                            let high_freq = (left[i] - lp_left) * 1.5;
+                            lp_left = left[i];
+                            diff_sum += high_freq.powi(2);
                         }
                         dom_rms = rms_l;
                     } else {
-                        for i in 1..right.len() {
-                            diff_sum += (right[i] - right[i - 1]).powi(2);
+                        for i in 0..right.len() {
+                            let high_freq = (right[i] - lp_right) * 1.5;
+                            lp_right = right[i];
+                            diff_sum += high_freq.powi(2);
                         }
                         dom_rms = rms_r;
                     }
