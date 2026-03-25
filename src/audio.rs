@@ -140,8 +140,27 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
 
                     let raw_x = (tdoa_x * 1.5) + (volume_x * 2.5);
                     let raw_x = raw_x.clamp(-1.0, 1.0);
+
+                    let mut diff_sum = 0.0;
+                    for i in 1..left.len() {
+                        diff_sum += (left[i] - left[i - 1]).powi(2) + (right[i] - right[i - 1]).powi(2);
+                    }
+                    let hf_intensity = (diff_sum / (left.len() as f32 * 2.0)).sqrt();
+                    let brightness = if total_intensity > 0.0001 {
+                        hf_intensity / total_intensity
+                    } else {
+                        0.0
+                    };
+
+                    let raw_y = ((brightness - 0.5) * 3.0).clamp(-1.0, 1.0);
                     prev_x += smoothing_factor * (raw_x - prev_x);
-                    let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: 1.0, intensity: total_intensity });
+                    prev_y += smoothing_factor * (raw_y - prev_y);
+
+                    let _ = radar_tx.send(RadarMessage::Surround {
+                        x: prev_x,
+                        y: prev_y,
+                        intensity: total_intensity
+                    });
                 }
             }
         });
