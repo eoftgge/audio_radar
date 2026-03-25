@@ -38,6 +38,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                 .request_device(&Default::default())
                 .await
                 .expect("Failed to connect GPU");
+
             let shader = gpu_device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
             let compute_pipeline = gpu_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Audio Cross-Correlation Pipeline"),
@@ -63,6 +64,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
 
             let mut prev_x = 0.0;
             let mut prev_y = 1.0;
+            let mut prev_brightness = 0.0;
             let smoothing_factor = 0.3;
 
             while let Ok((left, right)) = gpu_rx.recv() {
@@ -72,7 +74,8 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
 
                 if total_intensity < 0.001 {
                     prev_x *= 0.8;
-                    let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: 1.0, intensity: 0.0 });
+                    prev_y += 0.2 * (1.0 - prev_y);
+                    let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: prev_y, intensity: 0.0 });
                     continue;
                 }
 
@@ -97,6 +100,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                         wgpu::BindGroupEntry { binding: 2, resource: out_buffer.as_entire_binding() },
                     ],
                 });
+
                 let mut encoder = gpu_device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
@@ -111,10 +115,11 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                 let buffer_slice = staging_buffer.slice(..);
                 let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
                 buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
                 gpu_device.poll(PollType::Wait {
                     submission_index: None,
                     timeout: None,
-                }).expect("TODO panic message");
+                }).expect("GPU Polling failed");
 
                 if receiver.receive().await.is_some() {
                     let data = buffer_slice.get_mapped_range();
@@ -130,31 +135,65 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                     }
                     drop(data);
                     staging_buffer.unmap();
+
                     let shift = max_idx as i32 - MAX_SHIFT;
                     let tdoa_x = -((shift as f32) / (MAX_SHIFT as f32));
+
                     let volume_x = if total_intensity > 0.0 {
                         (rms_r - rms_l) / total_intensity
                     } else {
                         0.0
                     };
 
-                    let raw_x = (tdoa_x * 1.5) + (volume_x * 2.5);
-                    let raw_x = raw_x.clamp(-1.0, 1.0);
+                    let raw_x = ((tdoa_x * 0.8) + (volume_x * 1.5)).clamp(-1.0, 1.0);
+                    let abs_x = raw_x.abs();
 
                     let mut diff_sum = 0.0;
-                    for i in 1..left.len() {
-                        diff_sum += (left[i] - left[i - 1]).powi(2) + (right[i] - right[i - 1]).powi(2);
+                    let dom_rms;
+
+                    if rms_l > rms_r {
+                        for i in 1..left.len() {
+                            diff_sum += (left[i] - left[i - 1]).powi(2);
+                        }
+                        dom_rms = rms_l;
+                    } else {
+                        for i in 1..right.len() {
+                            diff_sum += (right[i] - right[i - 1]).powi(2);
+                        }
+                        dom_rms = rms_r;
                     }
-                    let hf_intensity = (diff_sum / (left.len() as f32 * 2.0)).sqrt();
-                    let brightness = if total_intensity > 0.0001 {
-                        hf_intensity / total_intensity
+
+                    let hf_intensity = (diff_sum / left.len() as f32).sqrt();
+                    let current_brightness = if dom_rms > 0.0001 {
+                        hf_intensity / dom_rms
                     } else {
                         0.0
                     };
 
-                    let raw_y = ((brightness - 0.5) * 3.0).clamp(-1.0, 1.0);
-                    prev_x += smoothing_factor * (raw_x - prev_x);
-                    prev_y += smoothing_factor * (raw_y - prev_y);
+                    if prev_brightness == 0.0 { prev_brightness = current_brightness; }
+                    prev_brightness += 0.15 * (current_brightness - prev_brightness);
+                    let brightness = prev_brightness;
+                    let y_center = (brightness - 0.85) * 4.0;
+                    let y_side;
+
+                    if brightness > 1.04 {
+                        y_side = 0.0;
+                    } else if brightness > 0.975 {
+                        let t = (brightness - 0.975) / (1.04 - 0.975);
+                        y_side = (t * std::f32::consts::PI).sin() * 2.0;
+                    } else {
+                        y_side = (brightness - 0.975) * 20.0;
+                    }
+
+                    let blend = ((abs_x - 0.3) / 0.5).clamp(0.0, 1.0);
+                    let raw_y = (y_center * (1.0 - blend) + y_side * blend).clamp(-1.0, 1.0);
+
+                    let length = (raw_x.powi(2) + raw_y.powi(2)).sqrt().max(1.0);
+                    let norm_x = raw_x / length;
+                    let norm_y = raw_y / length;
+
+                    prev_x += smoothing_factor * (norm_x - prev_x);
+                    prev_y += smoothing_factor * (norm_y - prev_y);
 
                     let _ = radar_tx.send(RadarMessage::Surround {
                         x: prev_x,
@@ -172,6 +211,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
         cpal::SampleFormat::U16 => build_stream::<u16>(&device, &stream_config, gpu_tx, channels)?,
         sample_format => return Err(AudioRadarErrors::Internal(format!("Unsupported format {:?}", sample_format))),
     };
+
     stream.play()?;
     loop {
         thread::sleep(Duration::from_secs(1));
