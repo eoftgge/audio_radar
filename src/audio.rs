@@ -62,13 +62,15 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
             });
 
             let mut prev_x = 0.0;
+            let mut prev_y = 1.0;
             let smoothing_factor = 0.3;
 
             while let Ok((left, right)) = gpu_rx.recv() {
-                let intensity = left.iter().map(|s| s.powi(2)).sum::<f32>() / left.len() as f32;
-                let intensity = intensity.sqrt();
+                let rms_l = (left.iter().map(|s| s.powi(2)).sum::<f32>() / left.len() as f32).sqrt();
+                let rms_r = (right.iter().map(|s| s.powi(2)).sum::<f32>() / right.len() as f32).sqrt();
+                let total_intensity = rms_l + rms_r;
 
-                if intensity < 0.001 {
+                if total_intensity < 0.001 {
                     prev_x *= 0.8;
                     let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: 1.0, intensity: 0.0 });
                     continue;
@@ -95,7 +97,6 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                         wgpu::BindGroupEntry { binding: 2, resource: out_buffer.as_entire_binding() },
                     ],
                 });
-
                 let mut encoder = gpu_device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
@@ -113,7 +114,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                 gpu_device.poll(PollType::Wait {
                     submission_index: None,
                     timeout: None,
-                }).expect("TODO: panic message");
+                }).expect("TODO panic message");
 
                 if receiver.receive().await.is_some() {
                     let data = buffer_slice.get_mapped_range();
@@ -129,12 +130,18 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                     }
                     drop(data);
                     staging_buffer.unmap();
-
                     let shift = max_idx as i32 - MAX_SHIFT;
-                    let raw_x = (shift as f32) / (MAX_SHIFT as f32);
+                    let tdoa_x = -((shift as f32) / (MAX_SHIFT as f32));
+                    let volume_x = if total_intensity > 0.0 {
+                        (rms_r - rms_l) / total_intensity
+                    } else {
+                        0.0
+                    };
 
+                    let raw_x = (tdoa_x * 1.5) + (volume_x * 2.5);
+                    let raw_x = raw_x.clamp(-1.0, 1.0);
                     prev_x += smoothing_factor * (raw_x - prev_x);
-                    let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: 1.0, intensity });
+                    let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: 1.0, intensity: total_intensity });
                 }
             }
         });
