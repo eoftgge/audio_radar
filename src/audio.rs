@@ -65,7 +65,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
             let mut prev_x = 0.0;
             let mut prev_y = 1.0;
             let mut prev_brightness = 0.0;
-            let smoothing_factor = 0.3;
+            let mut prev_intensity = 0.0;
 
             while let Ok((left, right)) = gpu_rx.recv() {
                 let rms_l = (left.iter().map(|s| s.powi(2)).sum::<f32>() / left.len() as f32).sqrt();
@@ -73,8 +73,9 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                 let total_intensity = rms_l + rms_r;
 
                 if total_intensity < 0.001 {
-                    prev_x *= 0.8;
-                    prev_y += 0.2 * (1.0 - prev_y);
+                    prev_x *= 0.92;
+                    prev_y += 0.08 * (1.0 - prev_y);
+                    prev_intensity = 0.0;
                     let _ = radar_tx.send(RadarMessage::Surround { x: prev_x, y: prev_y, intensity: 0.0 });
                     continue;
                 }
@@ -172,6 +173,11 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
 
                     if prev_brightness == 0.0 { prev_brightness = current_brightness; }
                     prev_brightness += 0.15 * (current_brightness - prev_brightness);
+                    if current_brightness > prev_brightness {
+                        prev_brightness += 0.85 * (current_brightness - prev_brightness);
+                    } else {
+                        prev_brightness += 0.15 * (current_brightness - prev_brightness);
+                    }
                     let brightness = prev_brightness;
                     let y_center = (brightness - 0.85) * 4.0;
                     let y_side;
@@ -191,9 +197,15 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                     let length = (raw_x.powi(2) + raw_y.powi(2)).sqrt().max(1.0);
                     let norm_x = raw_x / length;
                     let norm_y = raw_y / length;
+                    let current_smoothing = if total_intensity > prev_intensity * 1.5 {
+                        0.9
+                    } else {
+                        0.3
+                    };
+                    prev_intensity = total_intensity; // Запоминаем для следующего кадра
 
-                    prev_x += smoothing_factor * (norm_x - prev_x);
-                    prev_y += smoothing_factor * (norm_y - prev_y);
+                    prev_x += current_smoothing * (norm_x - prev_x);
+                    prev_y += current_smoothing * (norm_y - prev_y);
 
                     let _ = radar_tx.send(RadarMessage::Surround {
                         x: prev_x,
