@@ -11,7 +11,7 @@ pub fn draw_indicator(painter: &Painter, ctx: &Context, x_val: f32, y_val: f32, 
     let color = Color32::from_rgba_premultiplied(255, 30, 30, 240);
     let shadow_color = Color32::from_black_alpha(100);
 
-    if intensity < 0.002 { return; }
+    if intensity < 0.001 { return; }
 
     let anim_x = ctx.animate_value_with_time(Id::new("rad_x"), x_val, 0.04);
     let anim_y = ctx.animate_value_with_time(Id::new("rad_y"), -y_val, 0.04);

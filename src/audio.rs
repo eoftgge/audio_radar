@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
+use crate::filter::HighPassFilter;
 
 const CHUNK_SIZE: usize = 1024;
 const MAX_SHIFT: i32 = 40;
@@ -74,7 +75,7 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                 let rms_r = (right.iter().map(|s| s.powi(2)).sum::<f32>() / right.len() as f32).sqrt();
                 let total_intensity = rms_l + rms_r;
 
-                if total_intensity < 0.001 {
+                if total_intensity < 0.0005 {
                     prev_x *= 0.92;
                     prev_y += 0.08 * (1.0 - prev_y);
                     prev_intensity = 0.0;
@@ -148,25 +149,26 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                         0.0
                     };
 
-                    let raw_x = ((tdoa_x * 0.8) + (volume_x * 1.5)).clamp(-1.0, 1.0);
+                    let raw_x = ((tdoa_x * 0.5) + (volume_x * 0.7)).clamp(-1.0, 1.0);
                     let abs_x = raw_x.abs();
 
                     let mut diff_sum = 0.0;
                     let dom_rms;
+                    let func = |buf: &[f32], lp: &mut f32| {
+                        let mut ds = 0.0;
+                        for i in 0..buf.len() {
+                            let high_freq = (buf[i] - *lp) * 1.5;
+                            *lp = left[i];
+                            ds += high_freq.powi(2);
+                        }
+                        ds
+                    };
 
                     if rms_l > rms_r {
-                        for i in 0..left.len() {
-                            let high_freq = (left[i] - lp_left) * 1.5;
-                            lp_left = left[i];
-                            diff_sum += high_freq.powi(2);
-                        }
+                        diff_sum += func(&left, &mut lp_left);
                         dom_rms = rms_l;
                     } else {
-                        for i in 0..right.len() {
-                            let high_freq = (right[i] - lp_right) * 1.5;
-                            lp_right = right[i];
-                            diff_sum += high_freq.powi(2);
-                        }
+                        diff_sum += func(&right, &mut lp_right);
                         dom_rms = rms_r;
                     }
 
@@ -185,33 +187,20 @@ pub fn start_capture_audio(tx: Sender<RadarMessage>) -> Result<(), AudioRadarErr
                         prev_brightness += 0.15 * (current_brightness - prev_brightness);
                     }
                     let brightness = prev_brightness;
-                    let y_center = (brightness - 0.85) * 4.0;
-                    let y_side;
+                    let threshold_center = 0.2;
+                    let mut raw_y = ((brightness - threshold_center) * 4.0).clamp(-1.0, 1.0);
+                    let side_damp = 1.0 - ((abs_x - 0.15) / 0.4).clamp(0.0, 1.0);
+                    raw_y *= side_damp;
 
-                    if brightness > 1.04 {
-                        y_side = 0.0;
-                    } else if brightness > 0.975 {
-                        let t = (brightness - 0.975) / (1.04 - 0.975);
-                        y_side = (t * std::f32::consts::PI).sin() * 2.0;
-                    } else {
-                        y_side = (brightness - 0.975) * 20.0;
-                    }
-
-                    let blend = ((abs_x - 0.3) / 0.5).clamp(0.0, 1.0);
-                    let raw_y = (y_center * (1.0 - blend) + y_side * blend).clamp(-1.0, 1.0);
-
-                    let length = (raw_x.powi(2) + raw_y.powi(2)).sqrt().max(1.0);
-                    let norm_x = raw_x / length;
-                    let norm_y = raw_y / length;
                     let current_smoothing = if total_intensity > prev_intensity * 1.5 {
-                        0.9
+                        0.85
                     } else {
                         0.3
                     };
-                    prev_intensity = total_intensity; // Запоминаем для следующего кадра
+                    prev_intensity = total_intensity;
 
-                    prev_x += current_smoothing * (norm_x - prev_x);
-                    prev_y += current_smoothing * (norm_y - prev_y);
+                    prev_x += current_smoothing * (raw_x - prev_x);
+                    prev_y += current_smoothing * (raw_y - prev_y);
 
                     let _ = radar_tx.send(RadarMessage::Surround {
                         x: prev_x,
@@ -247,6 +236,9 @@ where
 {
     let mut left_buf = Vec::with_capacity(CHUNK_SIZE);
     let mut right_buf = Vec::with_capacity(CHUNK_SIZE);
+    let sample_rate = config.sample_rate.to_float_sample();
+    let mut hpf_left = HighPassFilter::new(19.0, sample_rate);
+    let mut hpf_right = HighPassFilter::new(19.0, sample_rate);
 
     let err_fn = |err| log::error!("Error: {}", err);
     let stream = device.build_input_stream(
@@ -254,8 +246,17 @@ where
         move |data: &[T], _: &cpal::InputCallbackInfo| {
             for frame in data.chunks_exact(channels) {
                 if channels >= 2 {
-                    left_buf.push(frame[0].to_float_sample());
-                    right_buf.push(frame[1].to_float_sample());
+                    let raw_left = frame[0].to_float_sample();
+                    let raw_right = frame[1].to_float_sample();
+
+                    let processed_left = hpf_left.process(raw_left);
+                    let processed_right = hpf_right.process(raw_right);
+
+                    let final_left = (raw_left * 0.3) + (processed_left * 1.5);
+                    let final_right = (raw_right * 0.3) + (processed_right * 1.5);
+
+                    left_buf.push(final_left);
+                    right_buf.push(final_right);
                 }
 
                 if left_buf.len() >= CHUNK_SIZE {
