@@ -55,14 +55,14 @@ fn draw_ring(painter: &Painter, center: Pos2) {
         .collect();
     painter.add(Shape::line(
         front,
-        Stroke::new(1.0, RING_COLOR.gamma_multiply(0.55)),
+        Stroke::new(1.0_f32, RING_COLOR.gamma_multiply(0.55)),
     ));
 
     let mut d = 90.0f32;
     while d < 270.0 {
         let a = point(center, d, RING_RADIUS);
         let b = point(center, (d + 4.0).min(270.0), RING_RADIUS);
-        painter.line_segment([a, b], Stroke::new(1.0, RING_COLOR.gamma_multiply(0.3)));
+        painter.line_segment([a, b], Stroke::new(1.0_f32, RING_COLOR.gamma_multiply(0.3)));
         d += 9.0;
     }
 }
@@ -87,7 +87,7 @@ fn draw_response(painter: &Painter, center: Pos2, frame: &RadarFrame) {
                     point(center, angle, RING_RADIUS + len * scale),
                 ],
                 Stroke::new(
-                    2.0,
+                    2.0_f32,
                     Color32::from_rgba_unmultiplied(
                         color.r(),
                         color.g(),
@@ -120,7 +120,7 @@ fn draw_marker(painter: &Painter, center: Pos2, az_deg: f32, size: f32, color: C
     painter.add(Shape::convex_polygon(
         vec![tip, p1, p2],
         fill,
-        Stroke::new(1.0, Color32::from_black_alpha(160)),
+        Stroke::new(1.0_f32, Color32::from_black_alpha(160)),
     ));
 }
 
@@ -131,9 +131,13 @@ fn draw_center(painter: &Painter, center: Pos2, transient: bool) {
             point(center, 0.0, RING_RADIUS - 10.0),
             point(center, 0.0, RING_RADIUS - 2.0),
         ],
-        Stroke::new(1.5, RING_COLOR.gamma_multiply(0.8)),
+        Stroke::new(1.5_f32, RING_COLOR.gamma_multiply(0.8)),
     );
     if transient {
-        painter.circle_stroke(center, 7.0, Stroke::new(1.5, Color32::from_white_alpha(90)));
+        painter.circle_stroke(
+            center,
+            7.0,
+            Stroke::new(1.5_f32, Color32::from_white_alpha(90)),
+        );
     }
 }

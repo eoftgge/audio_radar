@@ -58,7 +58,7 @@ pub fn start_capture_audio(tx: Sender<RadarFrame>) -> Result<(), AudioRadarError
     }
 
     let stream_config: cpal::StreamConfig = config.clone().into();
-    let sample_rate = stream_config.sample_rate.0 as f32;
+    let sample_rate = stream_config.sample_rate as f32;
 
     let left = Arc::new(SpscRing::new(RING_CAPACITY));
     let right = Arc::new(SpscRing::new(RING_CAPACITY));
