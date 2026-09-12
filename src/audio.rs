@@ -1,10 +1,3 @@
-//! Захват звука и запуск обработки.
-//!
-//! Аудио-колбэк не делает ни одной аллокации: он только снимает смещение и
-//! копирует сэмплы в кольцевой буфер. Раньше на каждый чанк вызывался
-//! `Vec::clone` прямо в realtime-потоке, а два буфера видеокарты создавались
-//! заново 47 раз в секунду.
-
 use crate::dsp::analyzer::Analyzer;
 use crate::dsp::calib::Calibration;
 use crate::dsp::ring::SpscRing;
@@ -18,35 +11,14 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
-/// Длина окна анализа. При 48 кГц это 21 мс — компромисс между разрешением по
-/// частоте и задержкой.
 pub const WINDOW: usize = 1024;
-
-/// Шаг между окнами: при 48 кГц около 5.3 мс, то есть примерно 187 обновлений
-/// в секунду.
 pub const HOP: usize = 256;
-
-/// Ёмкость кольцевого буфера в сэмплах на канал (около 0.68 с при 48 кГц).
 const RING_CAPACITY: usize = 32768;
-
-/// Если накопилось больше, обработка отстала — старое отбрасывается, чтобы
-/// задержка не росла бесконечно.
 const BACKLOG_LIMIT: usize = RING_CAPACITY / 2;
-
-/// Частота среза фильтра постоянной составляющей.
 const DC_CUTOFF_HZ: f32 = 20.0;
-
-/// Имя файла калибровки, который ищется в рабочем каталоге.
 const CALIBRATION_FILE: &str = "calibration.txt";
-
-/// Переменная окружения с путём к калибровке.
 const CALIBRATION_ENV: &str = "AUDIO_RADAR_CALIBRATION";
 
-/// Читает калибровку с диска, откатываясь на встроенный профиль CS2.
-///
-/// Встроенный профиль задан аналитически (сферическая модель головы) и уже
-/// пригоден для игры. Измеренная под конкретную HRTF таблица точнее, поэтому
-/// её можно положить рядом файлом — формат описан в [`Calibration::parse`].
 fn load_calibration() -> Calibration {
     let path = std::env::var(CALIBRATION_ENV).unwrap_or_else(|_| CALIBRATION_FILE.to_string());
     match std::fs::read_to_string(&path) {
@@ -86,8 +58,6 @@ pub fn start_capture_audio(tx: Sender<RadarFrame>) -> Result<(), AudioRadarError
     }
 
     let stream_config: cpal::StreamConfig = config.clone().into();
-    // cpal хранит частоту дискретизации новотипом `SampleRate`. Если в вашей
-    // версии это уже просто `u32`, здесь убирается `.0`.
     let sample_rate = stream_config.sample_rate.0 as f32;
 
     let left = Arc::new(SpscRing::new(RING_CAPACITY));
@@ -145,19 +115,12 @@ fn run_analysis(
     loop {
         let mut did_work = false;
 
-        // Оба кольца одной ёмкости и всегда пишутся и читаются одинаково,
-        // поэтому разойтись не должны. Но если это всё же случится, `peek` на
-        // отставшем кольце будет вечно возвращать `false`, и обработка встанет
-        // молча — дешевле проверить и пересинхронизироваться.
         if left.available() != right.available() {
             log::warn!("кольца разошлись, сброс");
             left.clear();
             right.clear();
         }
 
-        // Если накопился завал, старое просто выбрасывается: показывать
-        // направление позавчерашнего шага бессмысленно, а задержка иначе
-        // растёт неограниченно.
         let backlog = left.available();
         if backlog > BACKLOG_LIMIT {
             let drop_n = backlog - WINDOW;
@@ -178,8 +141,6 @@ fn run_analysis(
         }
 
         if !did_work {
-            // Пауза заметно короче шага окна, поэтому на задержку почти не
-            // влияет, но и не крутит процессор впустую.
             thread::sleep(Duration::from_micros(500));
         }
     }
@@ -199,8 +160,6 @@ where
     let mut dc_left = DcBlocker::new(DC_CUTOFF_HZ, sample_rate);
     let mut dc_right = DcBlocker::new(DC_CUTOFF_HZ, sample_rate);
 
-    // Небольшие буферы фиксированной ёмкости: колбэк пишет в них и сразу
-    // отдаёт в кольцо, ничего не выделяя.
     const BATCH: usize = 512;
     let mut batch_l = [0.0f32; BATCH];
     let mut batch_r = [0.0f32; BATCH];

@@ -1,27 +1,13 @@
-//! Детектор атак по спектральному потоку.
-//!
-//! Шаги и выстрелы в шутерах — короткие импульсы. Непрерывный анализ потока
-//! большую часть времени меряет фон между событиями, поэтому направление
-//! выгоднее считать на атаке: там отношение сигнал/фон максимально, а
-//! сглаживать результат почти не нужно, что прямо экономит задержку.
-
-/// Спектральный поток с адаптивным порогом по скользящей медиане.
 pub struct OnsetDetector {
     prev_mag: Vec<f32>,
     history: Vec<f32>,
     hist_pos: usize,
     hist_filled: usize,
-    /// Во сколько раз поток должен превысить медиану истории.
     factor: f32,
-    /// Абсолютный пол, отсекающий срабатывания в тишине.
     floor: f32,
-    /// Сколько кадров после атаки детектор молчит.
     refractory_frames: usize,
     cooldown: usize,
-    /// Сколько кадров ещё копится статистика, прежде чем детектор начнёт
-    /// срабатывать.
     warmup: usize,
-    /// Диапазон бинов, по которым считается поток.
     bin_lo: usize,
     bin_hi: usize,
 }
@@ -43,18 +29,12 @@ impl OnsetDetector {
             floor: 1e-4,
             refractory_frames,
             cooldown: 0,
-            // На первом кадре предыдущий спектр ещё нулевой, поэтому поток
-            // получается равным всей энергии кадра, а медиана пустой истории —
-            // нулю. Без прогрева детектор гарантированно давал ложную атаку
-            // сразу после запуска, а она сбрасывает сглаживание азимута на
-            // мусорное значение.
             warmup: (history_len / 4).max(4),
             bin_lo,
             bin_hi: bin_hi.min(num_bins),
         }
     }
 
-    /// Скармливает кадр амплитудного спектра. Возвращает `true` на атаке.
     pub fn push(&mut self, mag: &[f32]) -> bool {
         let mut flux = 0.0;
         for k in self.bin_lo..self.bin_hi {
@@ -66,9 +46,6 @@ impl OnsetDetector {
         self.prev_mag[..self.bin_hi].copy_from_slice(&mag[..self.bin_hi]);
         let threshold = self.median() * self.factor + self.floor;
 
-        // История обновляется всегда, в том числе во время refractory: иначе
-        // порог «замерзает» на тихом участке и следующий кадр ложно
-        // срабатывает.
         self.history[self.hist_pos] = flux;
         self.hist_pos = (self.hist_pos + 1) % self.history.len();
         self.hist_filled = (self.hist_filled + 1).min(self.history.len());
@@ -102,7 +79,6 @@ impl OnsetDetector {
 mod tests {
     use super::*;
 
-    /// Ровный спектр заданной громкости.
     fn flat(level: f32, bins: usize) -> Vec<f32> {
         vec![level; bins]
     }
@@ -112,8 +88,6 @@ mod tests {
         let bins = 128;
         let mut det = OnsetDetector::new(bins, 4, 100, 64, 4);
 
-        // Ровный фон не должен порождать срабатываний (первые кадры уходят
-        // на прогрев).
         let mut steady_hits = 0;
         for _ in 0..60 {
             if det.push(&flat(0.01, bins)) {
@@ -122,7 +96,6 @@ mod tests {
         }
         assert_eq!(steady_hits, 0, "ровный фон не является атакой");
 
-        // Резкий скачок — атака.
         assert!(det.push(&flat(0.5, bins)), "скачок уровня не пойман");
     }
 
@@ -134,7 +107,6 @@ mod tests {
             det.push(&flat(0.01, bins));
         }
         assert!(det.push(&flat(0.5, bins)));
-        // Пока идёт пауза, повторные всплески игнорируются.
         for step in 0..5 {
             assert!(
                 !det.push(&flat(1.0, bins)),
@@ -151,7 +123,6 @@ mod tests {
         for _ in 0..40 {
             det.push(&flat(0.5, bins));
         }
-        // Спад громкости даёт отрицательный поток, а он отбрасывается.
         assert!(!det.push(&flat(0.01, bins)), "затухание не является атакой");
     }
 }

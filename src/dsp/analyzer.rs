@@ -1,37 +1,17 @@
-//! Сборка всего тракта: окно, спектр, детектор атак, локализация и
-//! отслеживание источников между кадрами.
-
 use crate::dsp::calib::Calibration;
 use crate::dsp::fft::{Complex, Fft, unpack_two_real};
 use crate::dsp::localize::{Localizer, PeakSet};
 use crate::dsp::onset::OnsetDetector;
 use crate::types::{MAX_SOURCES, RESPONSE_BINS, RadarFrame, Source};
 
-/// Ниже этого среднеквадратичного уровня кадр считается тишиной.
 const SILENCE_RMS: f32 = 1e-4;
-
-/// Динамический диапазон отображения громкости, дБ.
 const LOUDNESS_RANGE_DB: f32 = 60.0;
-
-/// Насколько близко должен лечь новый пик, чтобы считаться тем же источником.
 const TRACK_MATCH_DEG: f32 = 15.0;
-
-/// Постоянная времени сглаживания азимута, секунды.
 const AZIMUTH_TAU_S: f32 = 0.04;
-
-/// За сколько гаснет источник, переставший звучать, секунды.
 const RELEASE_S: f32 = 0.25;
-
-/// Ниже этой громкости трек снимается.
 const TRACK_CUTOFF: f32 = 0.02;
-
-/// Полоса, в которой ищутся атаки: основная энергия шагов и выстрелов.
 const ONSET_BAND_HZ: (f32, f32) = (200.0, 6000.0);
-
-/// Длина истории для адаптивного порога атак, секунды.
 const ONSET_HISTORY_S: f32 = 1.0;
-
-/// Пауза после атаки, секунды.
 const ONSET_REFRACTORY_S: f32 = 0.05;
 
 #[derive(Clone, Copy, Default)]
@@ -53,7 +33,6 @@ pub struct Analyzer {
     onset: OnsetDetector,
     loc: Localizer,
     tracks: [Track; MAX_SOURCES],
-    /// Доля шага окна от секунды — из неё считаются все постоянные времени.
     hop_seconds: f32,
 }
 
@@ -65,8 +44,6 @@ impl Analyzer {
         );
         assert!(hop > 0 && hop <= n, "шаг окна вне допустимого диапазона");
 
-        // Окно Ханна: периодическая форма, корректная для перекрывающегося
-        // анализа.
         let window: Vec<f32> = (0..n)
             .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / n as f32).cos())
             .collect();
@@ -100,7 +77,6 @@ impl Analyzer {
         &self.loc
     }
 
-    /// Разбирает один кадр. `l` и `r` должны быть длиной с окно.
     pub fn process(&mut self, l: &[f32], r: &[f32]) -> RadarFrame {
         assert_eq!(l.len(), self.n);
         assert_eq!(r.len(), self.n);
@@ -108,9 +84,6 @@ impl Analyzer {
         let mut sum_sq = 0.0f32;
         for i in 0..self.n {
             sum_sq += l[i] * l[i] + r[i] * r[i];
-            // Два вещественных сигнала укладываются в одно комплексное
-            // преобразование: вещественная часть — левый канал, мнимая —
-            // правый. Это ровно вдвое дешевле двух отдельных FFT.
             let w = self.window[i];
             self.packed[i] = Complex::new(l[i] * w, r[i] * w);
         }
@@ -131,8 +104,6 @@ impl Analyzer {
 
         let peaks = self.loc.analyze(&self.lspec, &self.rspec);
 
-        // Громкость в логарифмической шкале: линейная по амплитуде картинка
-        // почти всё время держалась бы у нуля.
         let loudness =
             ((20.0 * rms.log10() + LOUDNESS_RANGE_DB) / LOUDNESS_RANGE_DB).clamp(0.0, 1.0);
 
@@ -152,9 +123,6 @@ impl Analyzer {
 
     fn update_tracks(&mut self, peaks: &PeakSet, loudness: f32, transient: bool) {
         let decay = (-self.hop_seconds / RELEASE_S).exp();
-        // На атаке азимут берётся сразу, без сглаживания: именно ради этого
-        // атаки и детектируются. Сглаживание тут стоило бы прямой задержки на
-        // самом важном событии.
         let alpha = if transient {
             1.0
         } else {
@@ -184,8 +152,6 @@ impl Analyzer {
             let ti = match chosen {
                 Some(ti) => ti,
                 None => {
-                    // Свободный слот, иначе самый тихий из незанятых в этом
-                    // кадре.
                     let free = (0..MAX_SOURCES).find(|&i| !self.tracks[i].alive && !matched[i]);
                     match free.or_else(|| {
                         (0..MAX_SOURCES).filter(|&i| !matched[i]).min_by(|&a, &b| {
@@ -207,8 +173,6 @@ impl Analyzer {
             } else {
                 t.azimuth_deg = p.azimuth_deg;
             }
-            // Нарастание мгновенное, спад плавный: событие должно появляться
-            // без задержки, но не мигать между кадрами.
             t.level = t.level.max(target);
             t.confidence = p.confidence;
             t.alive = true;
@@ -244,8 +208,6 @@ impl Analyzer {
             }
         }
 
-        // Массив фиксированного размера вместо Vec: кадры собираются около
-        // двухсот раз в секунду, и аллокация тут ни к чему.
         let mut order = [0usize; MAX_SOURCES];
         let mut n = 0;
         for i in 0..MAX_SOURCES {
@@ -280,7 +242,6 @@ mod tests {
     const N: usize = 1024;
     const HOP: usize = 256;
     const FS: f32 = 48000.0;
-
     fn noise(state: &mut u32) -> f32 {
         *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
         ((*state >> 8) as f32 / 8388608.0) - 1.0
@@ -306,11 +267,8 @@ mod tests {
         let mut seed = 4242;
         let src: Vec<f32> = (0..N * 40).map(|_| noise(&mut seed) * 0.2).collect();
 
-        // Источник справа так, как его отдала бы HRTF: левый канал и отстаёт,
-        // и тише. Одна лишь задержка без разницы уровней физически невозможна.
         const DELAY: usize = 25;
-        const ILD_GAIN: f32 = 0.209; // -13.6 дБ
-
+        const ILD_GAIN: f32 = 0.209;
         let mut frame = RadarFrame::default();
         for step in 0..30 {
             let off = step * HOP;

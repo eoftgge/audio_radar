@@ -1,29 +1,10 @@
-//! Отрисовка радара.
-//!
-//! Прежний вид — одна стрелка — обещал больше, чем даёт стерео. Здесь вместо
-//! неё:
-//!
-//! * кольцо с отдельными метками на каждый найденный источник, до четырёх;
-//! * зеркальная метка сзади у каждого источника, потому что фронт и тыл дают
-//!   одинаковые бинауральные признаки и из стерео не различаются;
-//! * слабая «бахрома» по всему кольцу — полный отклик по азимуту.
-//!
-//! Показанная неопределённость полезнее ложной уверенности: игрок, который
-//! видит «слева, но фронт или тыл неясно», играет лучше того, кому нарисовали
-//! одну стрелку, и она ошиблась.
-
 use crate::types::{RESPONSE_BINS, RadarFrame};
 use eframe::egui::{Color32, Context, Painter, Pos2, Shape, Stroke, pos2};
 
-/// Радиус кольца в точках.
 const RING_RADIUS: f32 = 160.0;
-/// Максимальная длина штриха отклика.
 const RESPONSE_HEIGHT: f32 = 18.0;
-/// Размер метки источника.
 const MARKER_SIZE: f32 = 14.0;
-/// Ниже этой громкости источник не рисуется.
 const LEVEL_FLOOR: f32 = 0.03;
-
 const FRONT_COLOR: Color32 = Color32::from_rgb(255, 60, 60);
 const BACK_COLOR: Color32 = Color32::from_rgb(255, 170, 60);
 const RING_COLOR: Color32 = Color32::from_rgb(150, 150, 160);
@@ -40,12 +21,10 @@ pub fn draw_radar(painter: &Painter, ctx: &Context, frame: &RadarFrame) {
             continue;
         }
 
-        // Насыщенность передаёт громкость, прозрачность — надёжность оценки.
         let alpha = (60.0 + 195.0 * s.confidence.clamp(0.0, 1.0)) as u8;
         let size = MARKER_SIZE * (0.55 + 0.45 * s.level.clamp(0.0, 1.0));
 
         draw_marker(painter, center, s.azimuth_deg, size, FRONT_COLOR, alpha);
-        // Зеркало относительно линии между ушами: тот же ITD, тот же ILD.
         draw_marker(
             painter,
             center,
@@ -59,21 +38,17 @@ pub fn draw_radar(painter: &Painter, ctx: &Context, frame: &RadarFrame) {
     draw_center(painter, center, frame.transient);
 }
 
-/// Зеркальный азимут в задней полусфере.
 fn mirror_azimuth(az_deg: f32) -> f32 {
     let m = 180.0 - az_deg;
     if m > 180.0 { m - 360.0 } else { m }
 }
 
-/// Точка на луче заданного азимута. 0 градусов — вверх (вперёд), +90 — вправо.
 fn point(center: Pos2, az_deg: f32, radius: f32) -> Pos2 {
     let a = az_deg.to_radians();
     pos2(center.x + radius * a.sin(), center.y - radius * a.cos())
 }
 
 fn draw_ring(painter: &Painter, center: Pos2) {
-    // Передняя половина — сплошная, задняя — пунктиром: сразу видно, какая
-    // половина кольца достоверна, а какая является зеркальной догадкой.
     let front: Vec<Pos2> = (-90..=90)
         .step_by(3)
         .map(|d| point(center, d as f32, RING_RADIUS))
@@ -142,7 +117,6 @@ fn draw_marker(painter: &Painter, center: Pos2, az_deg: f32, size: f32, color: C
     let p2 = at(RING_RADIUS - size * 0.45, -size * 0.38);
 
     let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
-    // Тёмный контур: без него метка теряется на светлом фоне карты.
     painter.add(Shape::convex_polygon(
         vec![tip, p1, p2],
         fill,
@@ -152,7 +126,6 @@ fn draw_marker(painter: &Painter, center: Pos2, az_deg: f32, size: f32, color: C
 
 fn draw_center(painter: &Painter, center: Pos2, transient: bool) {
     painter.circle_filled(center, 3.0, Color32::from_white_alpha(140));
-    // Короткая риска вперёд, чтобы кольцо читалось однозначно.
     painter.line_segment(
         [
             point(center, 0.0, RING_RADIUS - 10.0),

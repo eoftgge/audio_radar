@@ -1,10 +1,3 @@
-//! Комплексная арифметика и FFT по основанию 2.
-//!
-//! Модуль намеренно не тянет внешних зависимостей: размеры окон здесь
-//! небольшие (1024 точки), и собственная реализация обходится в единицы
-//! микросекунд на кадр, зато её можно проверить отдельно от остального
-//! приложения.
-
 use std::f32::consts::PI;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -15,7 +8,6 @@ pub struct Complex {
 
 impl Complex {
     pub const ZERO: Self = Self { re: 0.0, im: 0.0 };
-
     pub fn new(re: f32, im: f32) -> Self {
         Self { re, im }
     }
@@ -48,8 +40,6 @@ impl Complex {
     }
 }
 
-/// Итеративный FFT Кули—Тьюки, in-place. Таблицы поворотных множителей и
-/// перестановки считаются один раз при создании.
 pub struct Fft {
     n: usize,
     rev: Vec<usize>,
@@ -75,7 +65,6 @@ impl Fft {
             *slot = r;
         }
 
-        // twiddles[j] = exp(-2*pi*i*j/n), j < n/2
         let mut twiddles = Vec::with_capacity(n / 2);
         for j in 0..n / 2 {
             let a = -2.0 * PI * (j as f32) / (n as f32);
@@ -89,7 +78,6 @@ impl Fft {
         self.run(data, false);
     }
 
-    /// Обратное преобразование с нормировкой на 1/n.
     pub fn inverse(&self, data: &mut [Complex]) {
         self.run(data, true);
         let s = 1.0 / self.n as f32;
@@ -133,12 +121,6 @@ impl Fft {
     }
 }
 
-/// Раскладывает результат одного комплексного FFT от `l[n] + i*r[n]` на два
-/// спектра вещественных сигналов.
-///
-/// Экономит ровно половину работы по сравнению с двумя отдельными
-/// преобразованиями. Заполняются бины `0..=n/2`; остальные восстанавливаются
-/// по эрмитовой симметрии и здесь не нужны.
 pub fn unpack_two_real(packed: &[Complex], left: &mut [Complex], right: &mut [Complex]) {
     let n = packed.len();
     let half = n / 2;
@@ -151,10 +133,8 @@ pub fn unpack_two_real(packed: &[Complex], left: &mut [Complex], right: &mut [Co
         let a = packed[k];
         let b = packed[(n - k) % n].conj();
 
-        // L[k] = (Z[k] + conj(Z[n-k])) / 2
         left[k] = a.add(b).scale(0.5);
 
-        // R[k] = (Z[k] - conj(Z[n-k])) / (2i) = (Z[k] - conj(Z[n-k])) * (-i/2)
         let d = a.sub(b);
         right[k] = Complex::new(d.im * 0.5, -d.re * 0.5);
     }

@@ -1,34 +1,17 @@
-//! Кольцевой буфер на одного писателя и одного читателя (SPSC).
-//!
-//! Нужен для того, чтобы аудио-колбэк cpal не делал ни одной аллокации:
-//! он только копирует сэмплы в заранее выделенную память. Раньше на каждый
-//! чанк делался `Vec::clone` прямо в realtime-потоке, что могло давать
-//! пропуски и щелчки.
-//!
-//! Читатель умеет подсматривать окно без его удаления (`peek`) и отдельно
-//! сдвигать хвост (`consume`) — это ровно то, что нужно для STFT с
-//! перекрытием, где окно длиннее шага.
-
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct SpscRing {
     slots: UnsafeCell<Box<[f32]>>,
     mask: usize,
-    /// Позиция записи. Меняет только писатель.
     head: AtomicUsize,
-    /// Позиция чтения. Меняет только читатель.
     tail: AtomicUsize,
 }
 
-// Безопасно при соблюдении инварианта SPSC: `push` вызывается ровно из одного
-// потока, `peek`/`consume` — ровно из одного другого. Писатель трогает только
-// слоты в [head, head+n), читатель — только в [tail, head).
 unsafe impl Send for SpscRing {}
 unsafe impl Sync for SpscRing {}
 
 impl SpscRing {
-    /// `capacity` округляется вверх до степени двойки.
     pub fn new(capacity: usize) -> Self {
         let cap = capacity.next_power_of_two().max(2);
         Self {
@@ -43,17 +26,12 @@ impl SpscRing {
         self.mask + 1
     }
 
-    /// Сколько сэмплов доступно читателю.
     pub fn available(&self) -> usize {
         self.head
             .load(Ordering::Acquire)
             .wrapping_sub(self.tail.load(Ordering::Relaxed))
     }
 
-    /// Дописывает сэмплы. Возвращает число записанных: при переполнении
-    /// лишнее отбрасывается, чтобы никогда не блокировать аудио-поток.
-    ///
-    /// Вызывать только из потока-писателя.
     pub fn push(&self, data: &[f32]) -> usize {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Acquire);
@@ -69,10 +47,6 @@ impl SpscRing {
         n
     }
 
-    /// Копирует `out.len()` сэмплов с позиции чтения, не сдвигая хвост.
-    /// Возвращает `false`, если данных пока недостаточно.
-    ///
-    /// Вызывать только из потока-читателя.
     pub fn peek(&self, out: &mut [f32]) -> bool {
         if self.available() < out.len() {
             return false;
@@ -85,17 +59,12 @@ impl SpscRing {
         true
     }
 
-    /// Сдвигает позицию чтения на `n` сэмплов.
-    ///
-    /// Вызывать только из потока-читателя.
     pub fn consume(&self, n: usize) {
         let tail = self.tail.load(Ordering::Relaxed);
         let n = n.min(self.available());
         self.tail.store(tail.wrapping_add(n), Ordering::Release);
     }
 
-    /// Отбрасывает всё накопленное. Используется, когда читатель отстал
-    /// настолько, что старые данные уже не имеют смысла.
     pub fn clear(&self) {
         self.tail
             .store(self.head.load(Ordering::Acquire), Ordering::Release);
@@ -151,7 +120,6 @@ mod tests {
     #[test]
     fn survives_wraparound() {
         let ring = SpscRing::new(64);
-        // Прокручиваем кольцо несколько раз, чтобы индексы завернулись.
         for round in 0..10u32 {
             let data: Vec<f32> = (0..40).map(|i| (round * 100 + i) as f32).collect();
             assert_eq!(ring.push(&data), 40);

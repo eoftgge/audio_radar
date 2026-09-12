@@ -99,6 +99,13 @@ cargo run --release
 
 Логи включаются через `RUST_LOG=info`.
 
+Сборка и тесты проверяются на Linux и Windows в GitHub Actions
+(`.github/workflows/ci.yml`).
+
+Если сборка падает на `src/audio.rs` в строке с `stream_config.sample_rate.0`,
+значит в вашей версии cpal частота дискретизации хранится не новотипом
+`SampleRate`, а простым `u32` — тогда уберите `.0`.
+
 ## Важное предупреждение про античиты
 
 Захват звука через loopback не читает память игры, но:
