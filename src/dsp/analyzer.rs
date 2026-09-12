@@ -2,7 +2,7 @@ use crate::dsp::calib::Calibration;
 use crate::dsp::fft::{Complex, Fft, unpack_two_real};
 use crate::dsp::localize::{Localizer, PeakSet};
 use crate::dsp::onset::OnsetDetector;
-use crate::types::{MAX_SOURCES, RESPONSE_BINS, RadarFrame, Source};
+use crate::types::{MAX_SOURCES, RadarFrame, Source};
 
 const SILENCE_RMS: f32 = 1e-4;
 const LOUDNESS_RANGE_DB: f32 = 60.0;
@@ -91,7 +91,7 @@ impl Analyzer {
 
         if rms < SILENCE_RMS {
             self.release_all();
-            return self.build_frame(0.0, false, false);
+            return self.build_frame(0.0, false);
         }
 
         self.fft.forward(&mut self.packed);
@@ -108,7 +108,7 @@ impl Analyzer {
             ((20.0 * rms.log10() + LOUDNESS_RANGE_DB) / LOUDNESS_RANGE_DB).clamp(0.0, 1.0);
 
         self.update_tracks(&peaks, loudness, transient);
-        self.build_frame(loudness, transient, true)
+        self.build_frame(loudness, transient)
     }
 
     fn release_all(&mut self) {
@@ -191,22 +191,12 @@ impl Analyzer {
         }
     }
 
-    fn build_frame(&self, loudness: f32, transient: bool, analyzed: bool) -> RadarFrame {
+    fn build_frame(&self, loudness: f32, transient: bool) -> RadarFrame {
         let mut frame = RadarFrame {
             loudness,
             transient,
             ..Default::default()
         };
-
-        if analyzed {
-            let resp = self.loc.response();
-            let peak = resp.iter().fold(0.0f32, |a, &b| a.max(b));
-            if peak > 0.0 {
-                for i in 0..RESPONSE_BINS.min(resp.len()) {
-                    frame.response[i] = (resp[i] / peak).clamp(0.0, 1.0);
-                }
-            }
-        }
 
         let mut order = [0usize; MAX_SOURCES];
         let mut n = 0;
@@ -294,7 +284,7 @@ mod tests {
         );
         assert!(s.level > 0.0 && s.level <= 1.0);
         assert!(frame.loudness > 0.0 && frame.loudness <= 1.0);
-        assert!(frame.response.iter().any(|&v| v > 0.5), "отклик пуст");
+        assert!(s.confidence > 0.0, "уверенность не выставлена");
     }
 
     #[test]

@@ -1,41 +1,60 @@
-use crate::types::{RESPONSE_BINS, RadarFrame};
+use crate::types::RadarFrame;
 use eframe::egui::{Color32, Context, Painter, Pos2, Shape, Stroke, pos2};
 
-const RING_RADIUS: f32 = 160.0;
-const RESPONSE_HEIGHT: f32 = 18.0;
-const MARKER_SIZE: f32 = 14.0;
-const LEVEL_FLOOR: f32 = 0.03;
-const FRONT_COLOR: Color32 = Color32::from_rgb(255, 60, 60);
-const BACK_COLOR: Color32 = Color32::from_rgb(255, 170, 60);
-const RING_COLOR: Color32 = Color32::from_rgb(150, 150, 160);
+const RADIUS_FRACTION: f32 = 0.33;
+const RADIUS_MIN: f32 = 150.0;
 
-pub fn draw_radar(painter: &Painter, ctx: &Context, frame: &RadarFrame) {
-    let center = ctx.content_rect().center();
+const ARC_THICKNESS: f32 = 12.0;
+const ARC_SPAN_CONFIDENT_DEG: f32 = 8.0;
+const ARC_SPAN_VAGUE_DEG: f32 = 34.0;
+const HALO_WIDTH: f32 = 6.0;
 
-    draw_ring(painter, center);
-    draw_response(painter, center, frame);
+const BACK_THICKNESS_SCALE: f32 = 0.42;
+const BACK_ALPHA_SCALE: f32 = 0.45;
+
+const LEVEL_FLOOR: f32 = 0.04;
+const PULSE_GAIN: f32 = 0.45;
+
+const MARKER: Color32 = Color32::from_rgb(150, 240, 255);
+const HALO: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 150);
+
+pub fn draw_radar(painter: &Painter, ctx: &Context, frame: &RadarFrame, pulse: f32) {
+    let rect = ctx.content_rect();
+    let center = rect.center();
+    let radius = (rect.width().min(rect.height()) * RADIUS_FRACTION).max(RADIUS_MIN);
+    let boost = 1.0 + PULSE_GAIN * pulse.clamp(0.0, 1.0);
 
     for i in 0..frame.count {
-        let s = frame.sources[i];
-        if s.level < LEVEL_FLOOR {
+        let source = frame.sources[i];
+        if source.level < LEVEL_FLOOR {
             continue;
         }
 
-        let alpha = (60.0 + 195.0 * s.confidence.clamp(0.0, 1.0)) as u8;
-        let size = MARKER_SIZE * (0.55 + 0.45 * s.level.clamp(0.0, 1.0));
+        let confidence = source.confidence.clamp(0.0, 1.0);
+        let level = source.level.clamp(0.0, 1.0);
+        let span = ARC_SPAN_VAGUE_DEG + (ARC_SPAN_CONFIDENT_DEG - ARC_SPAN_VAGUE_DEG) * confidence;
+        let width = ARC_THICKNESS * (0.55 + 0.45 * level) * boost;
+        let alpha = (110.0 + 145.0 * confidence).min(255.0) as u8;
 
-        draw_marker(painter, center, s.azimuth_deg, size, FRONT_COLOR, alpha);
-        draw_marker(
+        draw_arc(
             painter,
             center,
-            mirror_azimuth(s.azimuth_deg),
-            size * 0.78,
-            BACK_COLOR,
-            (alpha as f32 * 0.55) as u8,
+            radius,
+            source.azimuth_deg,
+            span,
+            width,
+            alpha,
+        );
+        draw_arc(
+            painter,
+            center,
+            radius,
+            mirror_azimuth(source.azimuth_deg),
+            span,
+            width * BACK_THICKNESS_SCALE,
+            (alpha as f32 * BACK_ALPHA_SCALE) as u8,
         );
     }
-
-    draw_center(painter, center, frame.transient);
 }
 
 fn mirror_azimuth(az_deg: f32) -> f32 {
@@ -48,96 +67,37 @@ fn point(center: Pos2, az_deg: f32, radius: f32) -> Pos2 {
     pos2(center.x + radius * a.sin(), center.y - radius * a.cos())
 }
 
-fn draw_ring(painter: &Painter, center: Pos2) {
-    let front: Vec<Pos2> = (-90..=90)
-        .step_by(3)
-        .map(|d| point(center, d as f32, RING_RADIUS))
+fn draw_arc(
+    painter: &Painter,
+    center: Pos2,
+    radius: f32,
+    az_deg: f32,
+    span_deg: f32,
+    width: f32,
+    alpha: u8,
+) {
+    if alpha == 0 || width <= 0.0 {
+        return;
+    }
+
+    let half = span_deg * 0.5;
+    let steps = (span_deg / 2.0).ceil().max(2.0) as usize;
+    let points: Vec<Pos2> = (0..=steps)
+        .map(|i| {
+            let t = i as f32 / steps as f32;
+            point(center, az_deg - half + span_deg * t, radius)
+        })
         .collect();
+
     painter.add(Shape::line(
-        front,
-        Stroke::new(1.0_f32, RING_COLOR.gamma_multiply(0.55)),
+        points.clone(),
+        Stroke::new(width + HALO_WIDTH, HALO),
     ));
-
-    let mut d = 90.0f32;
-    while d < 270.0 {
-        let a = point(center, d, RING_RADIUS);
-        let b = point(center, (d + 4.0).min(270.0), RING_RADIUS);
-        painter.line_segment([a, b], Stroke::new(1.0_f32, RING_COLOR.gamma_multiply(0.3)));
-        d += 9.0;
-    }
-}
-
-fn draw_response(painter: &Painter, center: Pos2, frame: &RadarFrame) {
-    for i in 0..RESPONSE_BINS {
-        let v = frame.response[i];
-        if v <= 0.02 {
-            continue;
-        }
-        let az = RadarFrame::response_azimuth(i);
-        let len = RESPONSE_HEIGHT * v;
-        let alpha = (30.0 + 110.0 * v) as u8;
-
-        for (angle, color, scale) in [
-            (az, FRONT_COLOR, 1.0f32),
-            (mirror_azimuth(az), BACK_COLOR, 0.6),
-        ] {
-            painter.line_segment(
-                [
-                    point(center, angle, RING_RADIUS),
-                    point(center, angle, RING_RADIUS + len * scale),
-                ],
-                Stroke::new(
-                    2.0_f32,
-                    Color32::from_rgba_unmultiplied(
-                        color.r(),
-                        color.g(),
-                        color.b(),
-                        (alpha as f32 * scale) as u8,
-                    ),
-                ),
-            );
-        }
-    }
-}
-
-fn draw_marker(painter: &Painter, center: Pos2, az_deg: f32, size: f32, color: Color32, alpha: u8) {
-    let a = az_deg.to_radians();
-    let radial = (a.sin(), -a.cos());
-    let perp = (a.cos(), a.sin());
-
-    let at = |along: f32, across: f32| {
-        pos2(
-            center.x + radial.0 * along + perp.0 * across,
-            center.y + radial.1 * along + perp.1 * across,
-        )
-    };
-
-    let tip = at(RING_RADIUS + size * 0.6, 0.0);
-    let p1 = at(RING_RADIUS - size * 0.45, size * 0.38);
-    let p2 = at(RING_RADIUS - size * 0.45, -size * 0.38);
-
-    let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
-    painter.add(Shape::convex_polygon(
-        vec![tip, p1, p2],
-        fill,
-        Stroke::new(1.0_f32, Color32::from_black_alpha(160)),
+    painter.add(Shape::line(
+        points,
+        Stroke::new(
+            width,
+            Color32::from_rgba_unmultiplied(MARKER.r(), MARKER.g(), MARKER.b(), alpha),
+        ),
     ));
-}
-
-fn draw_center(painter: &Painter, center: Pos2, transient: bool) {
-    painter.circle_filled(center, 3.0, Color32::from_white_alpha(140));
-    painter.line_segment(
-        [
-            point(center, 0.0, RING_RADIUS - 10.0),
-            point(center, 0.0, RING_RADIUS - 2.0),
-        ],
-        Stroke::new(1.5_f32, RING_COLOR.gamma_multiply(0.8)),
-    );
-    if transient {
-        painter.circle_stroke(
-            center,
-            7.0,
-            Stroke::new(1.5_f32, Color32::from_white_alpha(90)),
-        );
-    }
 }
